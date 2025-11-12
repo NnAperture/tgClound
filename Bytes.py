@@ -5,7 +5,7 @@ import threading
 import json
 from queue import Queue
 
-FILE_SIZE = 1000# 19500
+FILE_SIZE = 2000# 19500
 MANIFEST_PAGE_LIMIT = 3950  # approx character limit per manifest page
 
 class Chunk:
@@ -15,14 +15,15 @@ class Chunk:
         self.id:Id = Id().lock()
     
     def set(self, value=None, func=None, id=None, *, save=True):
-        if(id == None):
-            self.id = Id().lock()
-            threading.Thread(target=self.upload, args=(value, func, save)).start()
-        else:
-            self.id = id
-            if(save):
-                self.cache()
-        return self
+        with self.lock:
+            if(id == None):
+                self.id = Id().lock()
+                threading.Thread(target=self.upload, args=(value, func, save)).start()
+            else:
+                self.id = id
+                if(save):
+                    self.cache()
+            return self
 
     def clear(self):
         self.value = None
@@ -56,6 +57,7 @@ class Chunk:
                 value = func()
             if(save):
                 self.value = value
+
             self.id.set(Id(getbot().send_document_id(value)))
             self.id.unlock()
     
@@ -72,12 +74,14 @@ class LinkedBytes:
         self.init_symbol = init_symbol
         self.cache_limit = cache_limit
         self._id:Id = Id().lock()
-        self.chuncs = []
+        self.chuncs:list[Chunk] = []
         self.manipages = []
         if(cache_limit != -1):
             self.cache_queue = Queue()
 
         if(id == None):
+            if(url == None and value == None):
+                value = bytes()
             self.set(value, url)
         else:
             self._id.set(id)
@@ -87,38 +91,113 @@ class LinkedBytes:
                     self.header_download()
                     if(value != None or url != None):
                         self.set(value, url)
+                    elif(self.cache_limit > 0):
+                        self.chuncs[-1].get()
             threading.Thread(target=f, args=(self, value, url)).start()
 
-    def set(self, value=None, url=None, *, additional=False):
-        self._id.lock()
-        with self.lock:
-            if(additional):
-                pass
-            else:
-                if(url != None):
-                    self.chuncs = [Chunk().set(url, save=False)]
-                    if(self.cache_limit != -1):
-                        self.cache_queue.put(self.chuncs[-1])
+    def set(self, value=None, urls=None):
+        ready = threading.Event()
+
+        def th(self=self, value=value, urls=urls):
+            with self.lock:
+                ready.set()
+                self._id.lock()
+                try:
+                    if urls is not None:
+                        self.chuncs = []
+                        for url in (urls if isinstance(urls, (list, tuple)) else (urls,)):
+                            self.chuncs.append(Chunk().set(url, save=False))
+                            if self.cache_limit != -1:
+                                self.cache_queue.put(self.chuncs[-1])
+                                self.gc()
+                    else:
+                        self.chuncs = []
+                        cn = ci = 0
+                        for i in range(0, len(value), FILE_SIZE):
+                            if cn != self.cache_limit:
+                                val = value[i:i + FILE_SIZE]
+                                self.chuncs.append(Chunk().set(val))
+                                cn += 1
+                            else:
+                                def fun(chunc: Chunk = self.chuncs[ci], data=value[i:i + FILE_SIZE]):
+                                    chunc.id.wait_for_unlock()
+                                    chunc.clear()
+                                    return data
+                                self.chuncs.append(Chunk().set(func=fun))
+                                ci += 1
+                                if self.cache_limit != -1:
+                                    self.cache_queue.put(self.chuncs[-1])
+                                    self.gc()
+                    self.header_upload()
+                finally:
+                    self._id.unlock()
+        t = threading.Thread(target=th)
+        t.start()
+        ready.wait()
+        return self
+
+    
+    def add(self, value=None, urls=None, *, change_last=True):
+        ready = threading.Event()
+
+        def f():
+            with self.lock:
+                ready.set()
+                if isinstance(value, LinkedBytes):
+                    if len(value.chuncs) > 2:
+                        self.chuncs.extend(value.chuncs)
+                        self.header_upload()
+                    else:
+                        self.add(bytes(value))
+                    return
+
+                if urls is not None:
+                    for url in (urls if isinstance(urls, (list, tuple)) else (urls,)):
+                        self.chuncs.append(Chunk().set(url, save=False))
+                    self.header_upload()
+                    return
+
+                change_last_flag = change_last and len(self.chuncs) > 0
+                if change_last_flag:
+                    last = self.chuncs[-1]
+                    last.set(func=lambda last=last, data=value[:len(last.get())]: last.get() + data)
+                    leng = len(last.get())
                 else:
-                    self.chuncs = []
-                    if(self.cache_limit != -1):
-                        ci = 0
-                        cn = 0
-                    for i in range(0, len(value), FILE_SIZE):
-                        if(cn != self.cache_limit):
-                            val = value[i:i + FILE_SIZE]
-                            self.chuncs.append(Chunk().set(val))
-                            cn += 1
-                        else:
-                            def fun(chunc:Chunk=self.chuncs[ci], data=value[i:i + FILE_SIZE]):
-                                chunc.id.wait_for_unlock()
-                                chunc.clear()
-                                return data
-                            self.chuncs.append(Chunk().set(func=fun))
-                            ci += 1
-                        if(self.cache_limit != -1):
-                            self.cache_queue.put(self.chuncs[-1])
-        threading.Thread(target=self.header_upload).start()
+                    leng = 0
+
+                ci = cn = 0
+                for i in range(leng, len(value), FILE_SIZE):
+                    if cn != self.cache_limit:
+                        val = value[i:i + FILE_SIZE]
+                        self.chuncs.append(Chunk().set(val))
+                        cn += 1
+                    else:
+                        def fun(chunc: Chunk = self.chuncs[ci], data=value[i:i + FILE_SIZE]):
+                            chunc.id.wait_for_unlock()
+                            chunc.clear()
+                            return data
+                        self.chuncs.append(Chunk().set(func=fun))
+                        ci += 1
+                    if self.cache_limit != -1:
+                        self.cache_queue.put(self.chuncs[-1])
+                        self.gc()
+
+                self.header_upload()
+
+        t = threading.Thread(target=f)
+        t.start()
+        ready.wait()
+
+        return self
+
+    def __radd__(self, other):
+        self.add(other)
+    
+    def __add__(self, other):
+        o = LinkedBytes()
+        o.chuncs = self.chuncs
+        o.add(other)
+        return o
 
     def header_upload(self):
         header = 1
@@ -162,6 +241,7 @@ class LinkedBytes:
             getbot_id(main_id).edit_message(main_id, init + "l" + ("e" if e else "") + str(last) + text)
             self._id.unlock()
             self.headers_lock.set()
+        return self
 
     def header_download(self):
         with self.lock:
@@ -182,6 +262,7 @@ class LinkedBytes:
             total = ids = list(map(Id, text[1:].split())) + total
             self.chuncs = [Chunk().set(id=id, save=(self.cache_limit == -1)) for id in ids]
             self.headers_lock.set()
+        return self
 
     def get_chunk(self, chunk):
         with self.lock:
@@ -214,6 +295,66 @@ class LinkedBytes:
         if(self.cache_limit > -1):
             while(self.cache_queue._qsize() > self.cache_limit):
                 self.cache_queue.get().clear()
+        return self
+    
+    def save(self, file):
+        cl = False
+        if(type(file) == str):
+            file = open(file, "wb")
+            cl = True
+        for c in self.chuncs:
+            file.write(c.get())
+            if(self.cache_limit != -1):
+                self.cache_queue.put(c)
+                self.gc()
+        if(cl):
+            file.close()
+        return self
+    
+    def from_file(self, file, change_last=True):
+        ready = threading.Event()
+
+        def f():
+            with self.lock:
+                ready.set()
+                cl = False
+                if isinstance(file, str):
+                    file_obj = open(file, "rb")
+                    cl = True
+                else:
+                    file_obj = file
+
+                change_last_flag = change_last and len(self.chuncs) > 0
+                if change_last_flag:
+                    last = self.chuncs[-1]
+                    last.set(func=lambda last=last, data=file_obj.read(len(last.get())): last.get() + data)
+
+                ci = cn = 0
+                while (data := file_obj.read(FILE_SIZE)):
+                    if cn != self.cache_limit:
+                        self.chuncs.append(Chunk().set(data))
+                        cn += 1
+                    else:
+                        def fun(chunc: Chunk = self.chuncs[ci], data=data):
+                            chunc.id.wait_for_unlock()
+                            chunc.clear()
+                            return data
+                        self.chuncs.append(Chunk().set(func=fun))
+                        ci += 1
+                    if self.cache_limit != -1:
+                        self.cache_queue.put(self.chuncs[-1])
+                        self.gc()
+
+                if cl:
+                    file_obj.close()
+
+                self.header_upload()
+
+        t = threading.Thread(target=f)
+        t.start()
+        ready.wait()
+
+        return self
 
 
 class SimpleBytes:
