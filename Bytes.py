@@ -5,8 +5,110 @@ import threading
 import json
 from queue import Queue
 
-FILE_SIZE = 2000# 19500
+
+
+FILE_SIZE = 2000# 19500000
 MANIFEST_PAGE_LIMIT = 3950  # approx character limit per manifest page
+THRESHOLD = 3950
+
+class Bytes:
+    """
+    Универсальный класс для хранения данных.
+    Использует SimpleBytes для маленьких данных и LinkedBytes для больших.
+    Авто-конвертация при добавлении/установке.
+    """
+
+    def __init__(self, value=None, url=None, id=None, init_symbol="b", cache_limit=-1):
+        self._obj = None
+        self._init_symbol = init_symbol
+        self._cache_limit = cache_limit
+
+        if id is not None:
+            self._obj = LinkedBytes(id=id, init_symbol=init_symbol, cache_limit=cache_limit)
+            self._obj.headers_lock.wait()
+        else:
+            if value is not None and len(value) > THRESHOLD:
+                self._obj = LinkedBytes(value=value, init_symbol=init_symbol, cache_limit=cache_limit)
+            else:
+                self._obj = SimpleBytes(value=value, url=url, id=id, init_symbol=init_symbol)
+
+    def get(self):
+        return self._obj.get()
+
+    def set(self, value):
+        if isinstance(self._obj, SimpleBytes) and len(value) > THRESHOLD:
+            self._obj = LinkedBytes(value=value, init_symbol=self._init_symbol, cache_limit=self._cache_limit)
+        else:
+            self._obj.set(value)
+
+    @property
+    def id(self):
+        return self._obj.id
+
+    @id.setter
+    def id(self, value):
+        self._obj.id = value
+
+    def __bytes__(self):
+        return bytes(self._obj)
+
+    def save(self, file):
+        if hasattr(self._obj, "save"):
+            return self._obj.save(file)
+        with open(file, "wb") as f:
+            f.write(self.get())
+        return self
+
+    def from_file(self, file, change_last=True):
+        if isinstance(self._obj, LinkedBytes):
+            return self._obj.from_file(file, change_last=change_last)
+        with open(file, "rb") as f:
+            data = f.read()
+        self.set(data)
+        return self
+
+    def add(self, value=None, urls=None, *, change_last=True):
+        if isinstance(value, Bytes):
+            value = bytes(value)
+        elif isinstance(value, (SimpleBytes, LinkedBytes)):
+            value = bytes(value)
+
+        if isinstance(self._obj, SimpleBytes):
+            new_value = bytes(self._obj) + (value if isinstance(value, bytes) else bytes(value))
+            if len(new_value) > THRESHOLD:
+                self._obj = LinkedBytes(value=new_value, init_symbol=self._init_symbol, cache_limit=self._cache_limit)
+                self._obj.headers_lock.wait()
+            else:
+                self._obj.set(new_value)
+        else:
+            def async_add():
+                self._obj.add(value=value, urls=urls, change_last=change_last)
+            threading.Thread(target=async_add, daemon=True).start()
+
+        return self
+
+
+    def __add__(self, other):
+        b = Bytes()
+        b.set(bytes(self))
+        b.add(other)
+        return b
+
+    def __radd__(self, other):
+        b = Bytes()
+        b.set(bytes(other))
+        b.add(self)
+        return b
+
+    def __repr__(self):
+        return f"Bytes({self._obj})"
+
+    def __str__(self):
+        return str(bytes(self))
+
+
+
+
 
 class Chunk:
     def __init__(self):
@@ -143,6 +245,7 @@ class LinkedBytes:
         def f():
             with self.lock:
                 ready.set()
+
                 if isinstance(value, LinkedBytes):
                     if len(value.chuncs) > 2:
                         self.chuncs.extend(value.chuncs)
@@ -158,36 +261,32 @@ class LinkedBytes:
                     return
 
                 change_last_flag = change_last and len(self.chuncs) > 0
+                start_index = 0
                 if change_last_flag:
                     last = self.chuncs[-1]
-                    last.set(func=lambda last=last, data=value[:len(last.get())]: last.get() + data)
-                    leng = len(last.get())
-                else:
-                    leng = 0
+                    last_data = last.get()
+                    last.set(func=lambda last_data=last_data, data=value[:len(last_data)]: last_data + data)
+                    start_index = len(last_data)
 
-                ci = cn = 0
-                for i in range(leng, len(value), FILE_SIZE):
+                cn = ci = 0
+                for i in range(start_index, len(value), FILE_SIZE):
+                    val = value[i:i + FILE_SIZE]
                     if cn != self.cache_limit:
-                        val = value[i:i + FILE_SIZE]
                         self.chuncs.append(Chunk().set(val))
                         cn += 1
                     else:
-                        def fun(chunc: Chunk = self.chuncs[ci], data=value[i:i + FILE_SIZE]):
-                            chunc.id.wait_for_unlock()
-                            chunc.clear()
-                            return data
-                        self.chuncs.append(Chunk().set(func=fun))
+                        ch = Chunk()
+                        ch.set(func=lambda data=val: data)
+                        self.chuncs.append(ch)
                         ci += 1
                     if self.cache_limit != -1:
                         self.cache_queue.put(self.chuncs[-1])
                         self.gc()
-
                 self.header_upload()
 
         t = threading.Thread(target=f)
         t.start()
         ready.wait()
-
         return self
 
     def __radd__(self, other):
@@ -384,8 +483,8 @@ class SimpleBytes:
             self.value = requests.get(url).content
         self.value = value
         if(self._id == None):
-            self._id = Id(func=lambda self: self.set(getbot().send_message_id(self._init_symbol + "s" + to_str(value))))
-        threading.Thread(target=lambda self=self:getbot_id(self._id).edit_message(self._init_symbol + self._id, "s" + to_str(value))).start()
+            self._id = Id(func=lambda selfi, self=self: selfi.set(getbot().send_message_id(self._init_symbol + "s" + str(value))))
+        threading.Thread(target=lambda self=self:getbot_id(self._id).edit_message(self._id, self._init_symbol + "s" + str(value))).start()
         return self._id
     
     def get(self):

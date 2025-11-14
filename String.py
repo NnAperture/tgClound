@@ -6,7 +6,7 @@ import time
 import queue
 
 # Constants
-FILE_SIZE = 16000
+FILE_SIZE = 16000000
 LINKED_STRING_PREFIX = 'sl'
 SIMPLE_STRING_PREFIX = 'ss'
 CONTINUATION_PREFIX = 'c'

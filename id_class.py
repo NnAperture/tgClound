@@ -63,24 +63,33 @@ class Id:
     def bot(self):
         self.wait_for_unlock()
         if(hasattr(self, "func")):
-            self.func.join()
-            del self.func
+            try:
+                self.func.join()
+                del self.func
+            except AttributeError:
+                pass
         return self._bot
 
     @property
     def group(self):
         self.wait_for_unlock()
         if(hasattr(self, "func")):
-            self.func.join()
-            del self.func
+            try:
+                self.func.join()
+                del self.func
+            except AttributeError:
+                pass
         return self._group
     
     @property
     def id(self):
         self.wait_for_unlock()
         if(hasattr(self, "func")):
-            self.func.join()
-            del self.func
+            try:
+                self.func.join()
+                del self.func
+            except AttributeError:
+                pass
         return self._id
     
     def __repr__(self):
