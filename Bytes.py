@@ -279,17 +279,18 @@ class LinkedBytes:
             threading.Thread(target=self.header_download).start()
 
     def __bytes__(self):
-        self.headers_lock.wait()
-        out = bytes()
-        for c in self.chuncs:
-            out += c.get()
-        return out
+        with self.lock:
+            self.headers_lock.wait()
+            out = bytes()
+            for c in self.chuncs:
+                out += c.get()
+            return out
 
     def __str__(self):
         return str(bytes(self))
 
     def __repr__(self):
-        return f"TgC{str(self)}"
+        return f"TgC{self}"
 
     def gc(self):
         if(self.cache_limit > -1):
@@ -344,7 +345,6 @@ class LinkedBytes:
                     if self.cache_limit != -1:
                         self.cache_queue.put(self.chuncs[-1])
                         self.gc()
-
                 if cl:
                     file_obj.close()
 
