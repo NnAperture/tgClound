@@ -94,7 +94,7 @@ class Bytes:
         b.add(other)
         return b
 
-    def __radd__(self, other):
+    def __iadd__(self, other):
         b = Bytes()
         b.set(bytes(other))
         b.add(self)
@@ -289,7 +289,7 @@ class LinkedBytes:
         ready.wait()
         return self
 
-    def __radd__(self, other):
+    def __iadd__(self, other):
         self.add(other)
     
     def __add__(self, other):

@@ -2,6 +2,7 @@ from .List import List
 from .Int import Int
 from .String import Str
 from .Null import Null
+from .Bytes import Bytes
 from .id_class import Id
 from .config import getbot_id
 import time
@@ -30,6 +31,8 @@ class Var:
                     self._obj = Str(id=id)
                 elif text.startswith("L"):
                     self._obj = List(id=id)
+                elif text.startswith("b"):
+                    self._obj = Bytes(id=id)
                 elif text.startswith("n") or text == "":
                     self._obj = Null(id=id)
                 else:
@@ -38,7 +41,6 @@ class Var:
                 return
 
             else:
-                # Передано значение — перезаписываем объект по id
                 wrapped = self._wrap_value(value)
                 wrapped._id = id
                 wrapped.upload()
@@ -55,9 +57,11 @@ class Var:
 
     # --- Internal helper ---
     def _wrap_value(self, value):
-        """Преобразует Python-объект в Str, Int, List или Null."""
-        if isinstance(value, (Str, Int, List, Null)):
+        """Преобразует Python-объект в Str, Int, List, Null или Bytes."""
+        if isinstance(value, (Str, Int, List, Null, Bytes)):
             return value
+        elif isinstance(value, bytes):
+            return Bytes(value)
         elif isinstance(value, str):
             return Str(value)
         elif isinstance(value, int):
@@ -67,7 +71,6 @@ class Var:
         elif value is None:
             return Null()
         else:
-            # fallback: всё остальное → строка
             return Str(str(value))
 
     # --- Public API ---
@@ -146,14 +149,24 @@ class Var:
     def __str__(self):
         return str(self._obj)
 
+    def __int__(self):
+        return int(self._obj)
+    
+    def __bytes__(self):
+        return bytes(self._obj)
+
+    def __iter__(self):
+        for el in self._obj:
+            yield el
+
     # --- ID property ---
     @property
     def id(self):
         """Возвращает Id объекта (ждёт, если не готов)."""
-        _id = getattr(self._obj, "_id", None)
+        _id = getattr(self._obj, "id", None)
         while _id is None:
             time.sleep(0.05)
-            _id = getattr(self._obj, "_id", None)
+            _id = getattr(self._obj, "id", None)
         return _id
 
     @id.setter
