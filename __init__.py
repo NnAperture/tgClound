@@ -6,4 +6,4 @@ from .Null import Null
 from .Var import Var
 from .List import List
 from .Bytes import SimpleBytes, LinkedBytes, Bytes
-
+from .chain import Chain
