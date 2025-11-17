@@ -2,12 +2,11 @@ from .id_class import Id
 from .config import getbot, getbot_id, Bot
 from .bytes_string import *
 import threading
-import json
 from queue import Queue
 
 
 
-FILE_SIZE = 2000# 19500000
+FILE_SIZE = 19500000
 MANIFEST_PAGE_LIMIT = 3950  # approx character limit per manifest page
 THRESHOLD = 3950
 

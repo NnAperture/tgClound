@@ -32,9 +32,11 @@ def rebots():
         botlist = []
         for group in groups:
             vbot = Bot(bot, group, tok)
-            bots.append(vbot)
             botlist.append(vbot)
         matrix.append(botlist)
+    
+    bots = [matrix[i][j] for i in range(len(matrix)) for j in range(matrix[0])]
+
 
 class Bot:
     def __init__(self, bot, group, token):
