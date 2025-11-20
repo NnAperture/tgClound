@@ -48,6 +48,7 @@ class Int:
         if(text[0] == 'i'):
             self.value = bytes_int(to_bytes(text[1:]))
         else:
+            
             raise Exception(f"Error: {self._id} is not a number!")
         if(not self.downloading.empty()):
             while not self.downloading.empty():

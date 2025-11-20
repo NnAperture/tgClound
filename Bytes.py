@@ -3,12 +3,12 @@ from .config import getbot, getbot_id, Bot
 from .bytes_string import *
 import threading
 from queue import Queue
-
-
+from .chain import Chain
+from bytes_string import *
 
 FILE_SIZE = 19500000
 MANIFEST_PAGE_LIMIT = 3950  # approx character limit per manifest page
-THRESHOLD = 3950
+THRESHOLD = MANIFEST_PAGE_LIMIT * 3
 
 class Bytes:
     """
@@ -197,11 +197,8 @@ class LinkedBytes:
             threading.Thread(target=f, args=(self, value, url)).start()
 
     def set(self, value=None, urls=None):
-        ready = threading.Event()
-
         def th(self=self, value=value, urls=urls):
             with self.lock:
-                ready.set()
                 self._id.lock()
                 try:
                     if urls is not None:
@@ -234,17 +231,12 @@ class LinkedBytes:
                     self._id.unlock()
         t = threading.Thread(target=th)
         t.start()
-        ready.wait()
         return self
 
     
     def add(self, value=None, urls=None, *, change_last=True):
-        ready = threading.Event()
-
         def f():
             with self.lock:
-                ready.set()
-
                 if isinstance(value, LinkedBytes):
                     if len(value.chuncs) > 2:
                         self.chuncs.extend(value.chuncs)
@@ -285,7 +277,6 @@ class LinkedBytes:
 
         t = threading.Thread(target=f)
         t.start()
-        ready.wait()
         return self
 
     def __iadd__(self, other):
@@ -347,6 +338,7 @@ class LinkedBytes:
             self.manipages = [self._id]
             text:str = getbot_id(self._id).forward(self._id).text
             if(not text.startswith("bl")):
+                
                 raise Exception(f"Message {self.id} is not a LinkedBytes!")
             text = text[2:]
             total = []
@@ -411,11 +403,9 @@ class LinkedBytes:
         return self
     
     def from_file(self, file, change_last=True):
-        ready = threading.Event()
 
         def f():
             with self.lock:
-                ready.set()
                 cl = False
                 if isinstance(file, str):
                     file_obj = open(file, "rb")
@@ -450,59 +440,30 @@ class LinkedBytes:
 
         t = threading.Thread(target=f)
         t.start()
-        ready.wait()
-
         return self
 
 
 class SimpleBytes:
-    def __init__(self, value=None, url=None, id=None, init_symbol="c"):
-        self._id = id
-        self.value = value
-        self._init_symbol = init_symbol
+    def __init__(self, value=None, id=None, init_symbol="c"):
+        self.init_symbol = init_symbol
         if(value != None):
-            self.upload(url=url)
+            self._chain = Chain(value, id=id, init=init_symbol + "s")
         else:
-            threading.Thread(target=self.download).start()
-    
-    def download(self):
-        if(self.value != None):
-            return self.value
-        st = getbot_id(self.id).forward(self.id).text
-        if(st[:2] != self._init_symbol + "s"):
-            raise Exception(f"Message {self.id} is not a SimpleBytes!")
-        self.value = to_bytes(st[2:])
-        return self.value
-
-    def upload(self, value=None, url=None):
-        if(self.value != None):
-            value = self.value
-        if(url != None):
-            import requests
-            self.value = requests.get(url).content
-        self.value = value
-        if(self._id == None):
-            self._id = Id(func=lambda selfi, self=self: selfi.set(getbot().send_message_id(self._init_symbol + "s" + str(value))))
-        threading.Thread(target=lambda self=self:getbot_id(self._id).edit_message(self._id, self._init_symbol + "s" + str(value))).start()
-        return self._id
+            self._chain = Chain(id=id, init= init_symbol + "s")
     
     def get(self):
-        if(self.value != None):
-            return self.download()
+        return to_str(self._chain.get())
 
     def set(self, value):
-        self.upload(value)
+        self._chain.set(to_bytes(value))
 
     @property
     def id(self):
-        if(self._id == None):
-            self.upload(self.value)
-        return self._id
+        return self._chain.id
 
     @id.setter
     def id(self, id):
-        self._id = id
-        self.value = None
+        self._chain = Chain(id=id, init=self.init_symbol + "s")
     
     def __bytes__(self):
         return self.get()

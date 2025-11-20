@@ -4,76 +4,71 @@ from .String import Str
 from .Null import Null
 from .Bytes import Bytes
 from .id_class import Id
+from .Undefined import UndefinedVar
 from .config import getbot_id
-import time
+import threading
 
 _UNSET = object()  # внутренний маркер для "аргумент не передан"
 
 
 class Var:
-    """Универсальный контейнер для Str, Int, List, Null и т.п."""
-
     def __init__(self, value=_UNSET, id=None):
+        self.lock = threading.RLock()
         self._obj = None
+        evt = threading.Event()
+        def th(self=self, value=value, id=id):
+            with self.lock:
+                evt.set()
+                if id is not None:
+                    id = Id(id)
 
-        # --- Если передан id ---
-        if id is not None:
-            id = Id(id)
+                    if value is _UNSET:
+                        text = getbot_id(id).forward(id).text or ""
+                        text = text.strip()
 
-            if value is _UNSET:
-                # Загружаем существующий объект
-                text = getbot_id(id).forward(id).text or ""
-                text = text.strip()
+                        if text.startswith("i"):
+                            self._obj = Int(id=id)
+                        elif text.startswith("s"):
+                            self._obj = Str(id=id)
+                        elif text.startswith("L"):
+                            self._obj = List(id=id)
+                        elif text.startswith("b"):
+                            self._obj = Bytes(id=id)
+                        elif text.startswith("n"):
+                            self._obj = Null(id=id)
+                        else:
+                            self._obj = UndefinedVar(id=id)
+                        return
 
-                if text.startswith("i"):
-                    self._obj = Int(id=id)
-                elif text.startswith("ss") or text.startswith("sl"):
-                    self._obj = Str(id=id)
-                elif text.startswith("L"):
-                    self._obj = List(id=id)
-                elif text.startswith("b"):
-                    self._obj = Bytes(id=id)
-                elif text.startswith("n") or text == "":
-                    self._obj = Null(id=id)
+                    else:
+                        wrapped = self._wrap_value(value, id)
+                        wrapped._id = id
+                        self._obj = wrapped
+                        return
+
+                if value is _UNSET:
+                    self._obj = Null()
                 else:
-                    # fallback — неизвестный тип → строка
-                    self._obj = Str(id=id)
-                return
+                    self._obj = self._wrap_value(value)
+        threading.Thread(target=th).start()
+        evt.wait()
 
-            else:
-                wrapped = self._wrap_value(value)
-                wrapped._id = id
-                wrapped.upload()
-                self._obj = wrapped
-                return
-
-        # --- Если id нет ---
-        if value is _UNSET:
-            # Ничего не передано → создаём Null
-            self._obj = Null()
-        else:
-            # Обычное значение
-            self._obj = self._wrap_value(value)
-
-    # --- Internal helper ---
-    def _wrap_value(self, value):
-        """Преобразует Python-объект в Str, Int, List, Null или Bytes."""
+    def _wrap_value(self, value, id):
         if isinstance(value, (Str, Int, List, Null, Bytes)):
             return value
         elif isinstance(value, bytes):
-            return Bytes(value)
+            return Bytes(value, id)
         elif isinstance(value, str):
-            return Str(value)
+            return Str(value, id)
         elif isinstance(value, int):
-            return Int(value)
+            return Int(value, id)
         elif isinstance(value, (list, tuple)):
-            return List(value)
+            return List(value, id)
         elif value is None:
             return Null()
         else:
-            return Str(str(value))
+            return UndefinedVar(value, id)
 
-    # --- Public API ---
     def set(self, value):
         new_obj = self._wrap_value(value)
         new_obj._id = getattr(self._obj, "_id", None)
@@ -81,12 +76,10 @@ class Var:
         self._obj = new_obj
 
     def get(self):
-        """Возвращает чистое значение (str/int/list/etc)."""
         if hasattr(self._obj, "get"):
             return self._obj.get()
         return self._obj
 
-    # --- Proxy methods ---
     def __getattr__(self, name):
         return getattr(self._obj, name)
 
@@ -96,7 +89,6 @@ class Var:
         else:
             setattr(self._obj, name, value)
 
-    # --- Item access ---
     def __getitem__(self, key):
         if hasattr(self._obj, "__getitem__"):
             return self._obj[key]
@@ -108,7 +100,6 @@ class Var:
             return
         raise TypeError(f"{type(self._obj).__name__} does not support item assignment")
 
-    # --- Arithmetic / concat ---
     def __add__(self, other):
         if hasattr(self._obj, "__add__"):
             return Var(self._obj + (other._obj if isinstance(other, Var) else other))
@@ -131,7 +122,6 @@ class Var:
             return self
         raise TypeError(f"{type(self._obj).__name__} does not support subtraction")
 
-    # --- Type conversions ---
     def __int__(self):
         if hasattr(self._obj, "__int__"):
             return int(self._obj)
@@ -142,7 +132,6 @@ class Var:
             return len(self._obj)
         raise TypeError("Object has no length")
 
-    # --- Representation ---
     def __repr__(self):
         return f"<Var {repr(self._obj)}>"
 
@@ -159,19 +148,11 @@ class Var:
         for el in self._obj:
             yield el
 
-    # --- ID property ---
     @property
     def id(self):
-        """Возвращает Id объекта (ждёт, если не готов)."""
-        _id = getattr(self._obj, "id", None)
-        while _id is None:
-            time.sleep(0.05)
-            _id = getattr(self._obj, "id", None)
-        return _id
+        return self._obj.id
 
     @id.setter
     def id(self, value):
-        """Присваивает Id и перезаписывает объект."""
         self._obj._id = Id(value)
-        if hasattr(self._obj, "upload"):
-            self._obj.upload()
+        self._obj.download()
