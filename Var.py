@@ -23,7 +23,7 @@ class Var:
                     id = Id(id)
 
                     if value is _UNSET:
-                        text = getbot_id(id).forward(id).text or ""
+                        text = getbot_id(id).get_text(id) or ""
                         text = text.strip()
 
                         if text.startswith("i"):

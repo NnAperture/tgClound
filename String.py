@@ -43,7 +43,7 @@ class Str:
 
         # --- 1️⃣ Telegram message ID ---
         if id is not None:
-            text = getbot_id(id).forward(id).text
+            text = getbot_id(id).get_text(id)
             if text.startswith(SIMPLE_STRING_PREFIX):
                 self._obj = SimpleString(id=id)
             elif text.startswith(LINKED_STRING_PREFIX):
@@ -166,7 +166,7 @@ class Str:
 
     @id.setter
     def id(self, value):
-        text = getbot_id(value).forward(value).text
+        text = getbot_id(value).get_text(value)
         if text.startswith(SIMPLE_STRING_PREFIX):
             self._obj = SimpleString(id=value)
         elif text.startswith(LINKED_STRING_PREFIX):
@@ -331,7 +331,7 @@ class LinkedString:
                 self.isdownloading = False
             return
         
-        text = getbot_id(self._id).forward(self._id).text
+        text = getbot_id(self._id).get_text(self._id)
         self.pages = [self._id]
         
         if text[:2] == LINKED_STRING_PREFIX:
@@ -347,7 +347,7 @@ class LinkedString:
                             self.pages.append(current_id)
                         else:
                             self.links.append(current_id)
-                    text = getbot_id(next_id).forward(next_id).text[1:]
+                    text = getbot_id(next_id).get_text(next_id)[1:]
                 
                 self.pages.reverse()
                 for id_str in text.split():
@@ -788,7 +788,7 @@ class SimpleString:
         if self._id is None:
             return
         
-        text = getbot_id(self._id).forward(self._id).text
+        text = getbot_id(self._id).get_text(self._id)
         
         if text[:2] == SIMPLE_STRING_PREFIX:
             self.value = text[2:-1]

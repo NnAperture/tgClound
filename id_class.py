@@ -115,3 +115,6 @@ class Id:
             return tuple(self) == tuple(other)
         except:
             return False
+    
+    def __hash__(self):
+        return hash(str(self))

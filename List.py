@@ -148,7 +148,7 @@ class List:
         text = ""
         for _ in range(50):  # до 5 секунд
             try:
-                text = getbot_id(self._id).forward(self._id).text
+                text = getbot_id(self._id).get_text(self._id)
                 if text and text.strip():
                     break
             except Exception:
@@ -180,7 +180,7 @@ class List:
                 self._page_access[page_id] = time.time()
                 return
 
-        text = getbot_id(page_id).forward(page_id).text
+        text = getbot_id(page_id).get_text(page_id)
         lines = text.strip().splitlines()
         if not lines or lines[0] != "P":
             return

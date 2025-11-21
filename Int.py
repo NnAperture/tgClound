@@ -44,7 +44,7 @@ class Int:
     def tdownload(self):
         if(self._id == None):
             return
-        text = getbot_id(self._id).forward(self._id).text
+        text = getbot_id(self._id).get_text(self._id)
         if(text[0] == 'i'):
             self.value = bytes_int(to_bytes(text[1:]))
         else:

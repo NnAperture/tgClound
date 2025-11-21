@@ -80,7 +80,7 @@ class Chain:
 
             init = True
             while True:
-                text = getbot_id(current).forward(current).text
+                text = getbot_id(current).get_text(current)
                 if(init):
                     text = text[len(self.init):]
                     init = False

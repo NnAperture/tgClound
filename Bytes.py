@@ -4,7 +4,7 @@ from .bytes_string import *
 import threading
 from queue import Queue
 from .chain import Chain
-from bytes_string import *
+from .bytes_string import *
 
 FILE_SIZE = 19500000
 MANIFEST_PAGE_LIMIT = 3950  # approx character limit per manifest page
@@ -17,19 +17,21 @@ class Bytes:
     Авто-конвертация при добавлении/установке.
     """
 
-    def __init__(self, value=None, url=None, id=None, init_symbol="b", cache_limit=-1):
+    def __init__(self, value=None, id=None, init_symbol="b", cache_limit=-1):
         self._obj = None
         self._init_symbol = init_symbol
         self._cache_limit = cache_limit
 
         if id is not None:
-            self._obj = LinkedBytes(id=id, init_symbol=init_symbol, cache_limit=cache_limit)
-            self._obj.headers_lock.wait()
+            if(getbot_id(id).get_text(id)[1] == "l"):
+                self._obj = LinkedBytes(id=id, init_symbol=init_symbol, cache_limit=cache_limit)
+            else:
+                self._obj = SimpleBytes(id=id, init_symbol=init_symbol)
         else:
             if value is not None and len(value) > THRESHOLD:
                 self._obj = LinkedBytes(value=value, init_symbol=init_symbol, cache_limit=cache_limit)
             else:
-                self._obj = SimpleBytes(value=value, url=url, id=id, init_symbol=init_symbol)
+                self._obj = SimpleBytes(value=value, id=id, init_symbol=init_symbol)
 
     def get(self):
         return self._obj.get()
@@ -336,7 +338,7 @@ class LinkedBytes:
         with self.lock:
             self.headers_lock.clear()
             self.manipages = [self._id]
-            text:str = getbot_id(self._id).forward(self._id).text
+            text:str = getbot_id(self._id).get_text(self._id)
             if(not text.startswith("bl")):
                 
                 raise Exception(f"Message {self.id} is not a LinkedBytes!")
@@ -346,7 +348,7 @@ class LinkedBytes:
                 ids = list(map(Id, text.split()))
                 next = ids[0]
                 self.manipages.append(next)
-                text = getbot_id(next).forward(next).text[1:]
+                text = getbot_id(next).get_text(next)[1:]
                 total = ids[1:] + total
 
             total = ids = list(map(Id, text[1:].split())) + total
@@ -447,15 +449,15 @@ class SimpleBytes:
     def __init__(self, value=None, id=None, init_symbol="c"):
         self.init_symbol = init_symbol
         if(value != None):
-            self._chain = Chain(value, id=id, init=init_symbol + "s")
+            self._chain = Chain((to_str(value) if value != None else None), id=id, init=init_symbol + "s")
         else:
-            self._chain = Chain(id=id, init= init_symbol + "s")
+            self._chain = Chain(id=id, init=init_symbol + "s")
     
     def get(self):
-        return to_str(self._chain.get())
+        return to_bytes(self._chain.get())
 
     def set(self, value):
-        self._chain.set(to_bytes(value))
+        self._chain.set(to_str(value))
 
     @property
     def id(self):
@@ -467,3 +469,6 @@ class SimpleBytes:
     
     def __bytes__(self):
         return self.get()
+
+    def __repr__(self):
+        return str(bytes(self))
